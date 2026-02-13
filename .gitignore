@@ -1,0 +1,12 @@
+```gitignore
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+.ipynb_checkpoints/
+.vscode/
+dist/
+build/
+*.egg-info/
+```

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ops-etl"
+version = "0.1.0"
+description = "Config-driven ETL ops CLI with SQL Server migrations, staging loader, transforms, rejects, and spec generation."
+requires-python = ">=3.10"
+dependencies = [
+  "pyodbc",
+  "python-dotenv",
+  "pandas",
+]
+
+[project.scripts]
+ops = "app.run_ops:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,16 @@
+black==26.1.0
+click==8.3.1
+colorama==0.4.6
+mypy_extensions==1.1.0
+numpy==2.4.2
+packaging==26.0
+pandas==3.0.0
+pathspec==1.0.4
+platformdirs==4.5.1
+pyodbc==5.3.0
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.1
+pytokens==0.4.1
+ruff==0.15.0
+six==1.17.0
+tzdata==2025.3
