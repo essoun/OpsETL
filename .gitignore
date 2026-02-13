@@ -10,3 +10,19 @@ dist/
 build/
 *.egg-info/
 ```
+# build outputs
+**/bin/
+**/obj/
+*.dacpac
+
+# exports (generated files)
+exports/
+# ---- generated / build outputs ----
+OpsETL.Database/bin/
+OpsETL.Database/obj/
+exports/
+
+# general build outputs (covers other future projects)
+**/bin/
+**/obj/
+*.dacpac
