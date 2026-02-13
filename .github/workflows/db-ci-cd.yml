@@ -1,0 +1,47 @@
+name: db-ci-cd
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "OpsETL.Database/**"
+      - ".github/workflows/db-ci-cd.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build SQL project (creates .dacpac)
+        run: dotnet build OpsETL.Database/OpsETL.Database.sqlproj -c Release
+
+      - name: Upload dacpac artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dacpac
+          path: OpsETL.Database/bin/Release/*.dacpac
+
+  deploy_local:
+    needs: build
+    runs-on: [self-hosted, onprem-sql]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dacpac
+          path: .
+
+      - name: Publish dacpac to ESSOUN\AppDB
+        uses: azure/sql-action@v2
+        with:
+          connection-string: ${{ secrets.LOCAL_SQL_CONNECTION_STRING }}
+          path: ./*.dacpac
+          action: publish
+          arguments: >
+            /p:BlockOnPossibleDataLoss=true
+            /p:DropObjectsNotInSource=false
