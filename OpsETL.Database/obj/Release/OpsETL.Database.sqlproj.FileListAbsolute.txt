@@ -1,1 +1,0 @@
-C:\Users\kofsi\OpsETL\OpsETL.Database\bin\Release\OpsETL.Database.dacpac
