@@ -29,7 +29,7 @@ jobs:
 
   deploy_local:
     needs: build
-    runs-on: [self-hosted, onprem-sql]
+    runs-on: self-hosted
     steps:
       - uses: actions/download-artifact@v4
         with:
