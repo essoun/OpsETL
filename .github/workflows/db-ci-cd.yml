@@ -36,12 +36,23 @@ jobs:
           name: dacpac
           path: .
 
-      - name: Publish dacpac to ESSOUN\AppDB
-        uses: azure/sql-action@v2
-        with:
-          connection-string: ${{ secrets.LOCAL_SQL_CONNECTION_STRING }}
-          path: ./*.dacpac
-          action: publish
-          arguments: >
-            /p:BlockOnPossibleDataLoss=true
+      - name: Publish dacpac to AppDB (SqlPackage)
+        shell: powershell
+        run: |
+          $dacpac = Get-ChildItem -Path . -Filter *.dacpac | Select-Object -First 1
+          if (-not $dacpac) { throw "No .dacpac found in workspace." }
+
+          $sqlpackage = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe"
+          if (-not (Test-Path $sqlpackage)) { throw "SqlPackage.exe not found at: $sqlpackage" }
+
+          Write-Host "Using dacpac: $($dacpac.FullName)"
+          Write-Host "Using SqlPackage: $sqlpackage"
+
+          & $sqlpackage `
+            /Action:Publish `
+            /SourceFile:$dacpac.FullName `
+            /TargetConnectionString:"${{ secrets.LOCAL_SQL_CONNECTION_STRING }}" `
+            /p:BlockOnPossibleDataLoss=true `
             /p:DropObjectsNotInSource=false
+
+
