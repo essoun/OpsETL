@@ -12,35 +12,60 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
 
+      - name: Debug - show DSP in repo
+        run: |
+          echo "DSP line in sqlproj:"
+          grep -n "<DSP>" OpsETL.Database/OpsETL.Database.sqlproj || true
+
       - name: Build SQL project (creates .dacpac)
         run: dotnet build OpsETL.Database/OpsETL.Database.sqlproj -c Release
+
+      - name: List build outputs
+        run: |
+          ls -la OpsETL.Database/bin/Release || true
 
       - name: Upload dacpac artifact
         uses: actions/upload-artifact@v4
         with:
           name: dacpac
-          path: OpsETL.Database/bin/Release/*.dacpac
+          path: |
+            OpsETL.Database/bin/Release/*.dacpac
+            OpsETL.Database/OpsETL.Database.sqlproj
 
   deploy_dev:
     needs: build
     runs-on: self-hosted
     environment: dev
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download dacpac artifact
+        uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
 
+      - name: Debug - show files + DSP from artifact
+        shell: powershell
+        run: |
+          Write-Host "Workspace files:"
+          Get-ChildItem -Path . -Recurse -Depth 2 | Format-Table -AutoSize
+
+          Write-Host "DSP line from sqlproj artifact:"
+          Select-String -Path ".\OpsETL.Database.sqlproj" -Pattern "<DSP>" -ErrorAction SilentlyContinue
+
       - name: Publish dacpac (Dev)
         shell: powershell
         run: |
-          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File | Select-Object -First 1
+          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
           if (-not $dacpac) { throw "No .dacpac found." }
 
           $sqlpackageCandidates = @(
@@ -51,6 +76,9 @@ jobs:
           )
           $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
+
+          Write-Host "Using dacpac: $($dacpac.FullName)"
+          Write-Host "Using SqlPackage: $sqlpackage"
 
           & $sqlpackage `
             /Action:Publish `
@@ -64,7 +92,8 @@ jobs:
     runs-on: self-hosted
     environment: test
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download dacpac artifact
+        uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
@@ -72,11 +101,22 @@ jobs:
       - name: Publish dacpac (Test)
         shell: powershell
         run: |
-          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File | Select-Object -First 1
+          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
           if (-not $dacpac) { throw "No .dacpac found." }
 
-          $sqlpackage = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe"
-          if (-not (Test-Path $sqlpackage)) { throw "SqlPackage.exe not found at: $sqlpackage" }
+          $sqlpackageCandidates = @(
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
+          )
+          $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
+
+          Write-Host "Using dacpac: $($dacpac.FullName)"
+          Write-Host "Using SqlPackage: $sqlpackage"
 
           & $sqlpackage `
             /Action:Publish `
@@ -87,10 +127,11 @@ jobs:
 
   deploy_prod:
     needs: deploy_test
-    runs-on: self-hosted
+    runs-on: [self-hosted, prod-runner]
     environment: prod
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download dacpac artifact
+        uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
@@ -98,11 +139,22 @@ jobs:
       - name: Publish dacpac (Prod)
         shell: powershell
         run: |
-          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File | Select-Object -First 1
+          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
           if (-not $dacpac) { throw "No .dacpac found." }
 
-          $sqlpackage = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe"
-          if (-not (Test-Path $sqlpackage)) { throw "SqlPackage.exe not found at: $sqlpackage" }
+          $sqlpackageCandidates = @(
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
+          )
+          $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
+
+          Write-Host "Using dacpac: $($dacpac.FullName)"
+          Write-Host "Using SqlPackage: $sqlpackage"
 
           & $sqlpackage `
             /Action:Publish `
@@ -110,6 +162,8 @@ jobs:
             "/TargetConnectionString:${{ secrets.SQL_CONNECTION_STRING }}" `
             /p:BlockOnPossibleDataLoss=true `
             /p:DropObjectsNotInSource=false
+
+
 
 
 
