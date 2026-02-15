@@ -1,97 +1,49 @@
-name: DB CI/CD
+name: db-ci-cd
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+    paths:
+      - "OpsETL.Database/**"
+      - ".github/workflows/db-ci-cd.yml"
   workflow_dispatch:
 
 jobs:
-  publish-dacpac:
-    runs-on: self-hosted
-
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # 1) DEBUG: confirm workspace + find dacpac
-      - name: Debug - find dacpac
-        shell: powershell
-        run: |
-          Write-Host "GITHUB_WORKSPACE=$env:GITHUB_WORKSPACE"
-          $dacpacs = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Filter *.dacpac -File |
-            Sort-Object LastWriteTime -Descending
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
 
-          if (-not $dacpacs) {
-            Write-Host "No .dacpac found. Showing files (depth 3):"
-            Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Depth 3 |
-              Select-Object -First 200 |
-              Format-Table -AutoSize
-            throw "No .dacpac found in workspace."
-          }
+      - name: Build SQL project (creates .dacpac)
+        run: dotnet build OpsETL.Database/OpsETL.Database.sqlproj -c Release
 
-          Write-Host "Found .dacpac(s):"
-          $dacpacs | Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize
+      - name: Upload dacpac artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dacpac
+          path: OpsETL.Database/bin/Release/*.dacpac
 
-      # 2) DEBUG: verify SqlPackage exists
-      - name: Debug - find SqlPackage
-        shell: powershell
-        run: |
-          $candidates = @(
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
-          )
-          $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          Write-Host "SqlPackage candidates:"
-          $candidates | ForEach-Object { "{0} => {1}" -f $_, (Test-Path $_) }
-          if (-not $found) {
-            throw "SqlPackage.exe not found. Install it on the runner OR update the path."
-          }
-          Write-Host "Using SqlPackage: $found"
+  deploy_local:
+    needs: build
+    runs-on: self-hosted
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dacpac
+          path: .
 
-      # 3) OPTIONAL DEBUG: sqlcmd quick test (skip if you don't have sqlcmd installed)
-      - name: Debug - test SQL (sqlcmd)
-        shell: powershell
-        continue-on-error: true
-        run: |
-          sqlcmd -? | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "sqlcmd not found; skipping sqlcmd test."
-            exit 0
-          }
-          # If your server isn't localhost, replace it here.
-          sqlcmd -S "localhost" -Q "SELECT @@VERSION"
-
-      # 4) PUBLISH: pick newest dacpac and publish
-      - name: Publish dacpac to AppDB (SqlPackage)
-        shell: powershell
-        run: |
-          $dacpac = Get-ChildItem -Path $env:GITHUB_WORKSPACE -Recurse -Filter *.dacpac -File |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-
-          if (-not $dacpac) { throw "No .dacpac found in workspace." }
-
-          $sqlpackageCandidates = @(
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
-          )
-
-          $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
-
-          Write-Host "Using dacpac: $($dacpac.FullName)"
-          Write-Host "Using SqlPackage: $sqlpackage"
-
-          & $sqlpackage `
-            /Action:Publish `
-            "/SourceFile:$($dacpac.FullName)" `
-            "/TargetConnectionString:${{ secrets.LOCAL_SQL_CONNECTION_STRING }}" `
-            /p:BlockOnPossibleDataLoss=true `
+      - name: Publish dacpac to ESSOUN\AppDB
+        uses: azure/sql-action@v2
+        with:
+          connection-string: ${{ secrets.LOCAL_SQL_CONNECTION_STRING }}
+          path: ./*.dacpac
+          action: publish
+          arguments: >
+            /p:BlockOnPossibleDataLoss=true
             /p:DropObjectsNotInSource=false
-
 
 
