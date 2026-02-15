@@ -31,19 +31,37 @@ jobs:
     needs: build
     runs-on: self-hosted
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download dacpac artifact
+        uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
 
-      - name: Publish dacpac to ESSOUN\AppDB
-        uses: azure/sql-action@v2
-        with:
-          connection-string: ${{ secrets.LOCAL_SQL_CONNECTION_STRING }}
-          path: ./*.dacpac
-          action: publish
-          arguments: >
-            /p:BlockOnPossibleDataLoss=true
+      - name: Publish dacpac to AppDB (SqlPackage)
+        shell: powershell
+        run: |
+          $dacpac = Get-ChildItem -Path . -Filter *.dacpac -File | Select-Object -First 1
+          if (-not $dacpac) { throw "No .dacpac found in workspace." }
+
+          $sqlpackageCandidates = @(
+            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
+            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
+          )
+          $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
+
+          Write-Host "Using dacpac: $($dacpac.FullName)"
+          Write-Host "Using SqlPackage: $sqlpackage"
+
+          & $sqlpackage `
+            /Action:Publish `
+            "/SourceFile:$($dacpac.FullName)" `
+            "/TargetConnectionString:${{ secrets.LOCAL_SQL_CONNECTION_STRING }}" `
+            /p:CreateNewDatabase=true `
+            /p:BlockOnPossibleDataLoss=true `
             /p:DropObjectsNotInSource=false
+
 
 
