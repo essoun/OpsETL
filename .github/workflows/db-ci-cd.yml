@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,44 +21,30 @@ jobs:
           dotnet-version: "8.0.x"
 
       - name: Debug - show DSP in repo
+        shell: powershell
         run: |
-          echo "DSP line in sqlproj:"
-          grep -n "<DSP>" OpsETL.Database/OpsETL.Database.sqlproj || true
+          Select-String -Path ".\OpsETL.Database\OpsETL.Database.sqlproj" -Pattern "<DSP>"
 
       - name: Build SQL project (creates .dacpac)
-        run: dotnet build OpsETL.Database/OpsETL.Database.sqlproj -c Release
-
-      - name: List build outputs
+        shell: powershell
         run: |
-          ls -la OpsETL.Database/bin/Release || true
+          dotnet build .\OpsETL.Database\OpsETL.Database.sqlproj -c Release
 
       - name: Upload dacpac artifact
         uses: actions/upload-artifact@v4
         with:
           name: dacpac
-          path: |
-            OpsETL.Database/bin/Release/*.dacpac
-            OpsETL.Database/OpsETL.Database.sqlproj
+          path: OpsETL.Database/bin/Release/*.dacpac
 
   deploy_dev:
     needs: build
     runs-on: self-hosted
     environment: dev
     steps:
-      - name: Download dacpac artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
-
-      - name: Debug - show files + DSP from artifact
-        shell: powershell
-        run: |
-          Write-Host "Workspace files:"
-          Get-ChildItem -Path . -Recurse -Depth 2 | Format-Table -AutoSize
-
-          Write-Host "DSP line from sqlproj artifact:"
-          Select-String -Path ".\OpsETL.Database.sqlproj" -Pattern "<DSP>" -ErrorAction SilentlyContinue
 
       - name: Publish dacpac (Dev)
         shell: powershell
@@ -77,9 +63,6 @@ jobs:
           $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
 
-          Write-Host "Using dacpac: $($dacpac.FullName)"
-          Write-Host "Using SqlPackage: $sqlpackage"
-
           & $sqlpackage `
             /Action:Publish `
             "/SourceFile:$($dacpac.FullName)" `
@@ -92,8 +75,7 @@ jobs:
     runs-on: self-hosted
     environment: test
     steps:
-      - name: Download dacpac artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
@@ -106,17 +88,8 @@ jobs:
             Select-Object -First 1
           if (-not $dacpac) { throw "No .dacpac found." }
 
-          $sqlpackageCandidates = @(
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
-          )
-          $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
-
-          Write-Host "Using dacpac: $($dacpac.FullName)"
-          Write-Host "Using SqlPackage: $sqlpackage"
+          $sqlpackage = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe"
+          if (-not (Test-Path $sqlpackage)) { throw "SqlPackage.exe not found at: $sqlpackage" }
 
           & $sqlpackage `
             /Action:Publish `
@@ -130,8 +103,7 @@ jobs:
     runs-on: [self-hosted, prod-runner]
     environment: prod
     steps:
-      - name: Download dacpac artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: dacpac
           path: .
@@ -144,17 +116,8 @@ jobs:
             Select-Object -First 1
           if (-not $dacpac) { throw "No .dacpac found." }
 
-          $sqlpackageCandidates = @(
-            "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\160\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\150\DAC\bin\SqlPackage.exe",
-            "C:\Program Files\Microsoft SQL Server\DAC\bin\SqlPackage.exe"
-          )
-          $sqlpackage = $sqlpackageCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $sqlpackage) { throw "SqlPackage.exe not found on runner." }
-
-          Write-Host "Using dacpac: $($dacpac.FullName)"
-          Write-Host "Using SqlPackage: $sqlpackage"
+          $sqlpackage = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\Extensions\Microsoft\SQLDB\DAC\SqlPackage.exe"
+          if (-not (Test-Path $sqlpackage)) { throw "SqlPackage.exe not found at: $sqlpackage" }
 
           & $sqlpackage `
             /Action:Publish `
@@ -162,6 +125,7 @@ jobs:
             "/TargetConnectionString:${{ secrets.SQL_CONNECTION_STRING }}" `
             /p:BlockOnPossibleDataLoss=true `
             /p:DropObjectsNotInSource=false
+
 
 
 
